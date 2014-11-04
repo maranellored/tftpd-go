@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"net"
 )
 
@@ -17,8 +16,16 @@ func (c TftpConnection) Write(packet []byte) (int, error) {
 	return c.Connection.WriteToUDP(packet, c.RemoteAddr)
 }
 
-func (c TftpConnection) Read(buffer []byte) (int, net.Addr, error) {
+func (c TftpConnection) Read(buffer []byte) (int, *net.UDPAddr, error) {
 	return c.Connection.ReadFromUDP(buffer)
+}
+
+func (c TftpConnection) GetRemoteAddr() *net.UDPAddr {
+	return c.RemoteAddr
+}
+
+func (c TftpConnection) GetConnection() *net.UDPConn {
+	return c.Connection
 }
 
 // The raw request is a struct that holds data about the client
@@ -84,7 +91,6 @@ func CreateErrorPacket(errCode uint16, errMsg string) []byte {
 	binary.Write(buffer, binary.BigEndian, ERROR)
 	binary.Write(buffer, binary.BigEndian, errCode)
 
-	fmt.Println(errMsg)
 	buffer.WriteString(errMsg)
 
 	return buffer.Bytes()
@@ -110,7 +116,6 @@ func CreateDataPacket(blockNumber uint16, data []byte) []byte {
 
 func SendError(errorCode uint16, errorMsg string, connection TftpConnection) {
 	errorPkt := CreateErrorPacket(errorCode, errorMsg)
-	fmt.Println("Sending: " + string(errorPkt[:]))
 	connection.Write(errorPkt)
 }
 

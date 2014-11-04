@@ -33,8 +33,6 @@ const (
 const MAX_PACKET_SIZE = 516
 const MAX_DATA_BLOCK_SIZE = 512
 
-var storedFiles = map[string][]byte{}
-
 func startTFTPServer(server string, threads, timeout int) {
 	addr, err := net.ResolveUDPAddr("udp", server)
 	handleError(err)
@@ -42,10 +40,12 @@ func startTFTPServer(server string, threads, timeout int) {
 	conn, err := net.ListenUDP("udp", addr)
 	handleError(err)
 
-	tftpChannel := make(chan TftpRawRequest)
+	// Create a channel of size = # of threads
+	tftpChannel := make(chan TftpRawRequest, threads)
+	tftpCache := NewTftpCache()
 
 	for i := 0; i < threads; i++ {
-		go handleTftpRequest(tftpChannel, timeout)
+		go handleTftpRequest(tftpChannel, tftpCache, timeout)
 	}
 
 	for {
@@ -60,9 +60,11 @@ func startTFTPServer(server string, threads, timeout int) {
 
 		tftpChannel <- request
 	}
+
+	close(tftpChannel)
 }
 
-func handleTftpRequest(tftpChannel chan TftpRawRequest, timeout int) {
+func handleTftpRequest(tftpChannel chan TftpRawRequest, fileCache *TftpCache, timeout int) {
 
 	for {
 		rawRequest := <-tftpChannel
@@ -96,9 +98,9 @@ func handleTftpRequest(tftpChannel chan TftpRawRequest, timeout int) {
 
 		switch request.GetOpcode() {
 		case WRQ:
-			processWriteRequest(request.GetFilename(), request.GetMode(), tftpConnection)
+			processWriteRequest(request.GetFilename(), request.GetMode(), tftpConnection, fileCache)
 		case RRQ:
-			processReadRequest(request.GetFilename(), request.GetMode(), tftpConnection)
+			processReadRequest(request.GetFilename(), request.GetMode(), tftpConnection, fileCache)
 		default:
 			fmt.Println("Received unknown request. Discarding..")
 		}
@@ -107,14 +109,14 @@ func handleTftpRequest(tftpChannel chan TftpRawRequest, timeout int) {
 	}
 }
 
-func processReadRequest(filename, mode string, conn TftpConnection) {
+func processReadRequest(filename, mode string, conn TftpConnection, fileCache *TftpCache) {
 
 	if mode != "octet" {
 		SendError(ERR_UNDEFINED, "Unsupported mode. Will only support octet mode", conn)
 		return
 	}
 
-	array := storedFiles[filename]
+	array := fileCache.getData(filename)
 	if array == nil {
 		SendError(ERR_NOT_FOUND, "File not found", conn)
 		return
@@ -124,21 +126,33 @@ func processReadRequest(filename, mode string, conn TftpConnection) {
 	currentLength := 0
 
 	for currentLength < len(array) {
-		ackBuffer := make([]byte, MAX_PACKET_SIZE)
+		ackBuffer := make([]byte, 4)
 
 		maxLength := currentLength + MAX_DATA_BLOCK_SIZE
 		if maxLength > len(array) {
 			maxLength = len(array)
 		}
 		dataPkt := CreateDataPacket(currentBlock, array[currentLength:maxLength])
-		conn.Write(dataPkt)
+		_, err := conn.Write(dataPkt)
+		if err != nil {
+			SendError(ERR_UNDEFINED, "Error while sending a data packet", conn)
+			return
+		}
 
-		conn.Read(ackBuffer)
-		// TODO: Check the remoteaddr returned above to make sure we're talking to the right
-		// Client
+		_, clientAddr, err := conn.Read(ackBuffer)
+		if err != nil {
+			SendError(ERR_UNDEFINED, "Error reading ACK packet off the wire", conn)
+		}
+		if clientAddr.Port != conn.GetRemoteAddr().Port {
+			// This packet came in from an unknown host.
+			// Reuse our connection object but set remote addr to the erroneous client.
+			SendError(ERR_UNKNOWN_TID, "Error packet from uknown source", TftpConnection{conn.GetConnection(), clientAddr})
+			continue
+		}
+
 		ackBlockNumber, err := ParseAckPacket(ackBuffer)
 		if err != nil {
-			SendError(ERR_ILLEGAL_TFTP_OP, "Illegal packet sent", conn)
+			SendError(ERR_ILLEGAL_TFTP_OP, "Illegal packet sent. Expected ACK packet", conn)
 			return
 		}
 
@@ -151,7 +165,7 @@ func processReadRequest(filename, mode string, conn TftpConnection) {
 
 }
 
-func processWriteRequest(filename, mode string, conn TftpConnection) {
+func processWriteRequest(filename, mode string, conn TftpConnection, fileCache *TftpCache) {
 	if mode != "octet" {
 		SendError(ERR_UNDEFINED, "Unsupported mode. Will only support octet mode", conn)
 		return
@@ -165,36 +179,49 @@ func processWriteRequest(filename, mode string, conn TftpConnection) {
 
 	for {
 		// Send the first ack with block number of 0
-		fmt.Println("Sending ACK packet with ACK: " + strconv.Itoa(int(currentBlock)))
 		ackPkt := CreateAckPacket(currentBlock)
-		conn.Write(ackPkt)
+		_, err := conn.Write(ackPkt)
+		if err != nil {
+			SendError(ERR_UNDEFINED, "Error while sending a data packet", conn)
+			return
+		}
 
 		if bytesRead < MAX_PACKET_SIZE {
 			break
 		}
 
 		dataPktBuffer := make([]byte, MAX_PACKET_SIZE)
-		n, _, err := conn.Read(dataPktBuffer)
+		n, clientAddr, err := conn.Read(dataPktBuffer)
 		if err != nil {
 			SendError(ERR_UNDEFINED, err.Error(), conn)
 			return
 		}
+		if clientAddr.Port != conn.GetRemoteAddr().Port {
+			// This packet came in from an unknown host.
+			// Reuse our connection object but set remote addr to the erroneous client.
+			SendError(ERR_UNKNOWN_TID, "Error packet from unknown source", TftpConnection{conn.GetConnection(), clientAddr})
+			continue
+		}
 
-		// Make sure block numbers are increasing...
 		data, block, err := ParseDataPacket(dataPktBuffer, n)
 		if err != nil {
 			SendError(ERR_ILLEGAL_TFTP_OP, "Illegal packet sent. Expected data packet.", conn)
 			return
 		}
 
+		// if we've already seen this data packet or receive an out of order
+		// data pkt, just continue and re-ack the previous block that we've seen
+		if block-1 != currentBlock {
+			continue
+		}
+
 		// The size of the data received is
 		tmpDataArray = append(tmpDataArray, data...)
 		bytesRead = n
-		fmt.Println("Bytes read: " + strconv.Itoa(n))
 		currentBlock = block
 	}
 
-	storedFiles[filename] = tmpDataArray
+	fileCache.putData(filename, tmpDataArray)
 	fmt.Println("Size of data: " + strconv.Itoa(len(tmpDataArray)))
 }
 
