@@ -43,3 +43,49 @@ func TestParseDataPacket(t *testing.T) {
 		t.Error("Error parsing data. Got: " + string(data))
 	}
 }
+
+func TestParseDataPacketFail(t *testing.T) {
+	buffer := []byte{0, 9, 0, 10, 't', 'h', 'i', 's', 'd', 'a', 't', 'a'}
+
+	_, _, err := ParseDataPacket(buffer, len(buffer))
+	if err == nil {
+		t.Error("Expected error while parsing data packet! ")
+	}
+}
+
+func TestCreateAckPacket(t *testing.T) {
+	blockNumber := uint16(9)
+
+	pkt := CreateAckPacket(blockNumber)
+
+	number, err := ParseAckPacket(pkt)
+	if err != nil {
+		t.Error("Error parsing ACK packet. " + err.Error())
+		t.Error("Did not expect an error while parsing the ACK packet")
+	}
+
+	if blockNumber != number {
+		t.Error("Expected the block number after creation to be same as one before")
+	}
+}
+
+func TestCreateDataPacket(t *testing.T) {
+	blockNumber := uint16(10)
+	data := []byte{'t', 'h', 'i', 's', 'i', 's', 'd', 'a', 't', 'a'}
+
+	pkt := CreateDataPacket(blockNumber, data)
+
+	d, number, err := ParseDataPacket(pkt, len(pkt))
+	if err != nil {
+		t.Error("Error parsing data packet. " + err.Error())
+	}
+
+	if blockNumber != number {
+		t.Error("Expected the block number after creation to be same as one before")
+	}
+
+	if string(d) != string(data) {
+		t.Error("Mismatch in data after parsing. Expected: " + string(data) + " . But got: " + string(d))
+	}
+
+}
