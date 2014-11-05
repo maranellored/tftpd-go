@@ -7,6 +7,13 @@ import (
 	"net"
 )
 
+type Connection interface {
+	Write(packet []byte) (int, error)
+	Read(buffer []byte) (int, *net.UDPAddr, error)
+	GetRemoteAddr() *net.UDPAddr
+	GetConnection() *net.UDPConn
+}
+
 type TftpConnection struct {
 	Connection *net.UDPConn
 	RemoteAddr *net.UDPAddr
@@ -114,7 +121,7 @@ func CreateDataPacket(blockNumber uint16, data []byte) []byte {
 	return buffer.Bytes()
 }
 
-func SendError(errorCode uint16, errorMsg string, connection TftpConnection) {
+func SendError(errorCode uint16, errorMsg string, connection Connection) {
 	errorPkt := CreateErrorPacket(errorCode, errorMsg)
 	connection.Write(errorPkt)
 }

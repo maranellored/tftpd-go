@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -109,7 +108,7 @@ func handleTftpRequest(tftpChannel chan TftpRawRequest, fileCache *TftpCache, ti
 	}
 }
 
-func processReadRequest(filename, mode string, conn TftpConnection, fileCache *TftpCache) {
+func processReadRequest(filename, mode string, conn Connection, fileCache *TftpCache) {
 
 	if mode != "octet" {
 		SendError(ERR_UNDEFINED, "Unsupported mode. Will only support octet mode", conn)
@@ -118,6 +117,7 @@ func processReadRequest(filename, mode string, conn TftpConnection, fileCache *T
 
 	array := fileCache.getData(filename)
 	if array == nil {
+		fmt.Println("File " + filename + " not found.")
 		SendError(ERR_NOT_FOUND, "File not found", conn)
 		return
 	}
@@ -156,16 +156,16 @@ func processReadRequest(filename, mode string, conn TftpConnection, fileCache *T
 			return
 		}
 
-		// TODO: Check to make sure that we dont get duplicate ACKs for a lower
-		// block number than that we are already at.
-		// If we are 6 and ack comes for 4, ignore that.
+		// We dont really check for out of order block numbers here
+		// because the client will send us its required block number when it receives
+		// an out of order packet.
 		currentLength = int(currentBlock) * MAX_DATA_BLOCK_SIZE
 		currentBlock = ackBlockNumber + 1
 	}
 
 }
 
-func processWriteRequest(filename, mode string, conn TftpConnection, fileCache *TftpCache) {
+func processWriteRequest(filename, mode string, conn Connection, fileCache *TftpCache) {
 	if mode != "octet" {
 		SendError(ERR_UNDEFINED, "Unsupported mode. Will only support octet mode", conn)
 		return
@@ -196,6 +196,7 @@ func processWriteRequest(filename, mode string, conn TftpConnection, fileCache *
 			SendError(ERR_UNDEFINED, err.Error(), conn)
 			return
 		}
+
 		if clientAddr.Port != conn.GetRemoteAddr().Port {
 			// This packet came in from an unknown host.
 			// Reuse our connection object but set remote addr to the erroneous client.
@@ -222,7 +223,6 @@ func processWriteRequest(filename, mode string, conn TftpConnection, fileCache *
 	}
 
 	fileCache.putData(filename, tmpDataArray)
-	fmt.Println("Size of data: " + strconv.Itoa(len(tmpDataArray)))
 }
 
 func handleError(err error) {
