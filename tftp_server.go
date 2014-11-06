@@ -114,6 +114,7 @@ func handleTftpRequest(tftpChannel chan TftpRawRequest, fileCache *TftpCache, ti
 func processReadRequest(filename, mode string, conn Connection, fileCache *TftpCache) {
 
 	if mode != "octet" {
+		fmt.Println("ERROR: Request for unsupported mode, " + mode)
 		SendError(ERR_UNDEFINED, "Unsupported mode. Will only support octet mode", conn)
 		return
 	}
@@ -138,6 +139,7 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 		dataPkt := CreateDataPacket(currentBlock, array[currentLength:maxLength])
 		_, err := conn.Write(dataPkt)
 		if err != nil {
+			fmt.Println("ERROR: Cannot send DATA packet to host " + conn.GetRemoteAddr().String())
 			SendError(ERR_UNDEFINED, "Error while sending a data packet", conn)
 			return
 		}
@@ -145,11 +147,14 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 		for {
 			_, clientAddr, err := conn.Read(ackBuffer)
 			if err != nil {
+				fmt.Println("ERROR: Cannot read ACK packet from host " + conn.GetRemoteAddr().String())
 				SendError(ERR_UNDEFINED, "Error reading ACK packet off the wire", conn)
+				return
 			}
 			if clientAddr.Port != conn.GetRemoteAddr().Port {
 				// This packet came in from an unknown host.
 				// Reuse our connection object but set remote addr to the erroneous client.
+				fmt.Println("ERROR: Received packet from unknown host: " + clientAddr.String())
 				SendError(ERR_UNKNOWN_TID, "Error packet from uknown source", TftpConnection{conn.GetConnection(), clientAddr})
 				continue
 			}
@@ -158,6 +163,7 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 
 		ackBlockNumber, err := ParseAckPacket(ackBuffer)
 		if err != nil {
+			fmt.Println("ERROR: Received unexpected packet, expecting ACK packet from host " + conn.GetRemoteAddr().String())
 			SendError(ERR_ILLEGAL_TFTP_OP, "Illegal packet sent. Expected ACK packet", conn)
 			return
 		}
@@ -175,6 +181,7 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 
 func processWriteRequest(filename, mode string, conn Connection, fileCache *TftpCache) {
 	if mode != "octet" {
+		fmt.Println("ERROR: Request for unsupported mode, " + mode)
 		SendError(ERR_UNDEFINED, "Unsupported mode. Will only support octet mode", conn)
 		return
 	}
@@ -190,7 +197,8 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 		ackPkt := CreateAckPacket(currentBlock)
 		_, err := conn.Write(ackPkt)
 		if err != nil {
-			SendError(ERR_UNDEFINED, "Error while sending a data packet", conn)
+			fmt.Println("ERROR: Cannot send ACK packet to host " + conn.GetRemoteAddr().String())
+			SendError(ERR_UNDEFINED, "Error while sending an ACK packet", conn)
 			return
 		}
 
@@ -205,6 +213,7 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 		for {
 			n, clientAddr, err = conn.Read(dataPktBuffer)
 			if err != nil {
+				fmt.Println("ERROR: Cannot read DATA packet from host " + conn.GetRemoteAddr().String())
 				SendError(ERR_UNDEFINED, err.Error(), conn)
 				return
 			}
@@ -212,6 +221,7 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 			if clientAddr.Port != conn.GetRemoteAddr().Port {
 				// This packet came in from an unknown host.
 				// Reuse our connection object but set remote addr to the erroneous client.
+				fmt.Println("ERROR: Received packet from unknown host: " + clientAddr.String())
 				SendError(ERR_UNKNOWN_TID, "Error packet from unknown source", TftpConnection{conn.GetConnection(), clientAddr})
 				continue
 			}
@@ -220,6 +230,7 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 
 		data, block, err := ParseDataPacket(dataPktBuffer, n)
 		if err != nil {
+			fmt.Println("ERROR: Received unexpected packet, expecting DATA packet from host " + conn.GetRemoteAddr().String())
 			SendError(ERR_ILLEGAL_TFTP_OP, "Illegal packet sent. Expected data packet.", conn)
 			return
 		}
