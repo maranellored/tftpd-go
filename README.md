@@ -2,6 +2,7 @@ TFTP
 ----
 
 A simple tftp server in Go.
+The server is implemented using [RFC 1350](https://www.ietf.org/rfc/rfc1350.txt)
 
 Usage
 -----
@@ -26,4 +27,22 @@ You can also manually set the timeout for requests that are made to the server. 
 $ ./tftpd-go --port 8080 --threads 32 --timeout 10
 ```
 
-**NOTE**: This version doesn't implement retries. Does not currently perform explicit error checking from the client.
+The default tftp client that is bundled with Mac OSX can be used to test the server. For example, to use the client 
+
+```
+$ echo "Testing TFTP Server" > test
+
+$ echo "Testing TFTP Server, again" > test2
+
+$ echo "put test" | tftp -e 127.0.0.1 7125
+Sent 20 bytes in 0.0 seconds
+
+$ echo "get test2" | tftp -e 127.0.0.1 7125
+Received 27 bytes in 0.0 seconds
+```
+
+**NOTES**: 
+* This version doesn't implement retries. 
+* This version does not currently perform explicit error checking from the client. If an unexpected packet is encountered from a valid client, it terminates the connection. 
+* This version does handle the case where a stray TFTP packet doesn't disrupt an existing transfer
+
