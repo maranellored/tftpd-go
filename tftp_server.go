@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"time"
 )
 
 // Each opcode is 2 bytes. Use the unsigned 16bit int
@@ -80,13 +79,12 @@ func handleTftpRequest(tftpChannel chan TftpRawRequest, fileCache *TftpCache, ti
 			fmt.Println("Error opening new UDP listener. Discarding request")
 			continue
 		}
-		conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-		//fmt.Println("Listening on:  " + conn.LocalAddr().String())
 		rawRequestBuffer := rawRequest.GetRawBytes()
 
-		tftpConnection := TftpConnection{
+		tftpConnection := &TftpConnection{
 			Connection: conn,
 			RemoteAddr: rawRequest.GetAddr(),
+			Timeout:    timeout,
 		}
 		// Get the first 2 bytes of the request to read the op-code
 		request, err := ParseTftpRequest(rawRequestBuffer)
@@ -155,7 +153,7 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 				// This packet came in from an unknown host.
 				// Reuse our connection object but set remote addr to the erroneous client.
 				fmt.Println("ERROR: Received packet from unknown host: " + clientAddr.String())
-				SendError(ERR_UNKNOWN_TID, "Error packet from uknown source", TftpConnection{conn.GetConnection(), clientAddr})
+				SendError(ERR_UNKNOWN_TID, "Error packet from uknown source", &TftpConnection{conn.GetConnection(), clientAddr, 1})
 				continue
 			}
 			break
@@ -222,7 +220,7 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 				// This packet came in from an unknown host.
 				// Reuse our connection object but set remote addr to the erroneous client.
 				fmt.Println("ERROR: Received packet from unknown host: " + clientAddr.String())
-				SendError(ERR_UNKNOWN_TID, "Error packet from unknown source", TftpConnection{conn.GetConnection(), clientAddr})
+				SendError(ERR_UNKNOWN_TID, "Error packet from unknown source", &TftpConnection{conn.GetConnection(), clientAddr, 1})
 				continue
 			}
 			break

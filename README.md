@@ -23,8 +23,17 @@ You can configure the maximum number of threads(go routines) that can be spawned
 
 You can also manually set the timeout for requests that are made to the server. This value is entered in seconds. 
 
+The default number of go routines is 16 and the default timeout is 1 second.
+
 ```
 $ ./tftpd-go --port 8080 --threads 32 --timeout 10
+
+$ ./tftpd-go -h
+Usage of ./tftpd-go:
+  -address="127.0.0.1": The address on which to start the TFTP server
+  -port=7125: The port to run the TFTP server on
+  -threads=16: The max number of threads to service requests with
+  -timeout=1: The timeout for the network connections in seconds
 ```
 
 The default tftp client that is bundled with Mac OSX can be used to test the server. For example, to use the client 

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
+	"time"
 )
 
 type Connection interface {
@@ -17,21 +18,24 @@ type Connection interface {
 type TftpConnection struct {
 	Connection *net.UDPConn
 	RemoteAddr *net.UDPAddr
+	Timeout    int
 }
 
-func (c TftpConnection) Write(packet []byte) (int, error) {
+func (c *TftpConnection) Write(packet []byte) (int, error) {
+	c.Connection.SetWriteDeadline(time.Now().Add(time.Duration(c.Timeout) * time.Second))
 	return c.Connection.WriteToUDP(packet, c.RemoteAddr)
 }
 
-func (c TftpConnection) Read(buffer []byte) (int, *net.UDPAddr, error) {
+func (c *TftpConnection) Read(buffer []byte) (int, *net.UDPAddr, error) {
+	c.Connection.SetReadDeadline(time.Now().Add(time.Duration(c.Timeout) * time.Second))
 	return c.Connection.ReadFromUDP(buffer)
 }
 
-func (c TftpConnection) GetRemoteAddr() *net.UDPAddr {
+func (c *TftpConnection) GetRemoteAddr() *net.UDPAddr {
 	return c.RemoteAddr
 }
 
-func (c TftpConnection) GetConnection() *net.UDPConn {
+func (c *TftpConnection) GetConnection() *net.UDPConn {
 	return c.Connection
 }
 
