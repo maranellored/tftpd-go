@@ -39,6 +39,7 @@ func startTFTPServer(server string, threads, timeout int) {
 	conn, err := net.ListenUDP("udp", addr)
 	handleError(err)
 
+	fmt.Println("Started TFTP server at " + server)
 	// Create a channel of size = # of threads
 	tftpChannel := make(chan TftpRawRequest, threads)
 	tftpCache := NewTftpCache()
@@ -97,8 +98,10 @@ func handleTftpRequest(tftpChannel chan TftpRawRequest, fileCache *TftpCache, ti
 
 		switch request.GetOpcode() {
 		case WRQ:
+			fmt.Println("Processing TFTP Write Request for file " + request.GetFilename() + ", in mode " + request.GetMode() + ", from host " + tftpConnection.GetRemoteAddr().String())
 			processWriteRequest(request.GetFilename(), request.GetMode(), tftpConnection, fileCache)
 		case RRQ:
+			fmt.Println("Processing TFTP Read Request for file " + request.GetFilename() + ", in mode " + request.GetMode() + ", from host " + tftpConnection.GetRemoteAddr().String())
 			processReadRequest(request.GetFilename(), request.GetMode(), tftpConnection, fileCache)
 		default:
 			fmt.Println("Received unknown request. Discarding..")
@@ -139,15 +142,18 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 			return
 		}
 
-		_, clientAddr, err := conn.Read(ackBuffer)
-		if err != nil {
-			SendError(ERR_UNDEFINED, "Error reading ACK packet off the wire", conn)
-		}
-		if clientAddr.Port != conn.GetRemoteAddr().Port {
-			// This packet came in from an unknown host.
-			// Reuse our connection object but set remote addr to the erroneous client.
-			SendError(ERR_UNKNOWN_TID, "Error packet from uknown source", TftpConnection{conn.GetConnection(), clientAddr})
-			continue
+		for {
+			_, clientAddr, err := conn.Read(ackBuffer)
+			if err != nil {
+				SendError(ERR_UNDEFINED, "Error reading ACK packet off the wire", conn)
+			}
+			if clientAddr.Port != conn.GetRemoteAddr().Port {
+				// This packet came in from an unknown host.
+				// Reuse our connection object but set remote addr to the erroneous client.
+				SendError(ERR_UNKNOWN_TID, "Error packet from uknown source", TftpConnection{conn.GetConnection(), clientAddr})
+				continue
+			}
+			break
 		}
 
 		ackBlockNumber, err := ParseAckPacket(ackBuffer)
@@ -162,6 +168,8 @@ func processReadRequest(filename, mode string, conn Connection, fileCache *TftpC
 		currentLength = int(currentBlock) * MAX_DATA_BLOCK_SIZE
 		currentBlock = ackBlockNumber + 1
 	}
+
+	fmt.Println("TFTP READ: File sent back to requester- " + filename)
 
 }
 
@@ -191,17 +199,23 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 		}
 
 		dataPktBuffer := make([]byte, MAX_PACKET_SIZE)
-		n, clientAddr, err := conn.Read(dataPktBuffer)
-		if err != nil {
-			SendError(ERR_UNDEFINED, err.Error(), conn)
-			return
-		}
+		var n int
+		var clientAddr *net.UDPAddr
 
-		if clientAddr.Port != conn.GetRemoteAddr().Port {
-			// This packet came in from an unknown host.
-			// Reuse our connection object but set remote addr to the erroneous client.
-			SendError(ERR_UNKNOWN_TID, "Error packet from unknown source", TftpConnection{conn.GetConnection(), clientAddr})
-			continue
+		for {
+			n, clientAddr, err = conn.Read(dataPktBuffer)
+			if err != nil {
+				SendError(ERR_UNDEFINED, err.Error(), conn)
+				return
+			}
+
+			if clientAddr.Port != conn.GetRemoteAddr().Port {
+				// This packet came in from an unknown host.
+				// Reuse our connection object but set remote addr to the erroneous client.
+				SendError(ERR_UNKNOWN_TID, "Error packet from unknown source", TftpConnection{conn.GetConnection(), clientAddr})
+				continue
+			}
+			break
 		}
 
 		data, block, err := ParseDataPacket(dataPktBuffer, n)
@@ -223,6 +237,7 @@ func processWriteRequest(filename, mode string, conn Connection, fileCache *Tftp
 	}
 
 	fileCache.putData(filename, tmpDataArray)
+	fmt.Println("TFTP WRITE: File written to memory- " + filename)
 }
 
 func handleError(err error) {

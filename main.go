@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"strconv"
 )
 
@@ -20,7 +19,6 @@ func main() {
 	flag.Parse()
 
 	serverAddress := address + ":" + strconv.Itoa(port)
-	fmt.Println("Server " + serverAddress)
 
 	startTFTPServer(serverAddress, n_threads, timeout)
 }

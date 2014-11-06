@@ -135,7 +135,7 @@ func ParseTftpRequest(buffer []byte) (TftpRequest, error) {
 		// Filename length is 0. Throw error
 		return TftpRequest{}, errors.New("Invalid filename specified")
 	}
-	filename := string(buffer[2:n])
+	filename := string(buffer[2 : n+2])
 
 	// The nth byte here is the null character.
 	// Move ahead by 1 and determine the mode
